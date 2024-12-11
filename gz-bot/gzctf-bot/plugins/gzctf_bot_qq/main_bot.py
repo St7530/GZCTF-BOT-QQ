@@ -1330,7 +1330,14 @@ async def _():
             if tmpGameInfo != GAME_LIST:
                 GAME_LIST = tmpGameInfo
                 for gameInfo in GAME_LIST:
+                    if gameInfo['title'] not in list(SEND_GAME_LIST.keys()):
+                        SEND_GAME_LIST[gameInfo['title']] = []
                     GAMENOTICE[f"gameId_{str(gameInfo['id'])}"] = getGameNotice(gameInfo['id'])
+                game_titles = {game['title'] for game in GAME_LIST}
+                for title in list(SEND_GAME_LIST.keys()):
+                    if title not in game_titles:
+                        del SEND_GAME_LIST[title]
+
         for gameInfo in GAME_LIST:
             tmpGameNotice = getGameNotice(gameInfo['id'])
             if tmpGameNotice != GAMENOTICE[f"gameId_{str(gameInfo['id'])}"]:
