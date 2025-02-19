@@ -77,6 +77,7 @@ def getGameList(name: str = None):
     if name:
         Temp_List = []
         game_list = json.loads(game_list.text)
+        game_list = game_list["data"]
         for game in game_list:
             if game["title"] == name:
                 Temp_List.append(game)
@@ -137,12 +138,12 @@ def checkConfig(config: dict):
     return True if config.get("SEND_LIST") else False
 
 
-def parseTime(strTime):
+def parseTime(timeStamp):
     """
-        解析通过 gzctf 平台获取的时间串
+        解析通过 gzctf 平台获取的时间戳
     """
     global UTC_TIMEZONE, UTC_PLUS_8_TIMEZONE
-    date = datetime.fromisoformat(strTime[:19])
+    date = datetime.fromtimestamp(int(timeStamp) / 1000)
     parsed_date_utc = UTC_TIMEZONE.localize(date)
     date = parsed_date_utc.astimezone(UTC_PLUS_8_TIMEZONE)
     year = date.year
