@@ -6,13 +6,21 @@ from datetime import datetime
 from nonebot import get_plugin_config
 from .config import Config
 
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 CONFIG = get_plugin_config(Config).CONFIG
 HEADERS = {"Content-Type": "application/json"}
 GZCTF_URL = CONFIG["GZCTF_URL"].rstrip('/')
 SESSION = requests.Session()
+SESSION.headers.update({
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+})
 LOGINDATA = "{" + f'"userName": "{CONFIG["GZ_USER"]}", "password": "{CONFIG["GZ_PASS"]}"' + "}"
 UTC_TIMEZONE = pytz.timezone('UTC')
 UTC_PLUS_8_TIMEZONE = pytz.timezone('Asia/Shanghai')
+BAN_DATA = "{\"status\":\"Suspended\"}"
 
 
 def parseArgs(s):
@@ -77,11 +85,14 @@ def getGameList(name: str = None):
     if name:
         Temp_List = []
         game_list = json.loads(game_list.text)
+        game_list = game_list["data"]
         for game in game_list:
             if game["title"] == name:
                 Temp_List.append(game)
         return Temp_List
-    return game_list.json()
+    game_list = json.loads(game_list.text)
+    game_list = game_list["data"]
+    return game_list
 
 
 def getGameInfo(game_id: int):
@@ -121,7 +132,7 @@ def checkCookieExpired():
             }
             API_CHECK_COOKIE_URL = GZCTF_URL + "/api/admin/config"
             try:
-                check = SESSION.get(url=API_CHECK_COOKIE_URL, headers=HEADERS, verify=False)
+                check = SESSION.get(url=API_CHECK_COOKIE_URL, headers=headers, verify=False)
             except Exception as e:
                 print(e)
                 return False
@@ -137,20 +148,28 @@ def checkConfig(config: dict):
     return True if config.get("SEND_LIST") else False
 
 
-def parseTime(strTime):
+def parseTime(timestamp_ms):
     """
-        解析通过 gzctf 平台获取的时间串
+        解析毫秒级时间戳（Unix timestamp in milliseconds）并转换为 UTC+8 时间
+        Args:
+            timestamp_ms (int): 毫秒级时间戳，如 `1716801234000`
+        Returns:
+            tuple: (year, month, day, hour, minute, second)
     """
-    global UTC_TIMEZONE, UTC_PLUS_8_TIMEZONE
-    date = datetime.fromisoformat(strTime[:19])
-    parsed_date_utc = UTC_TIMEZONE.localize(date)
-    date = parsed_date_utc.astimezone(UTC_PLUS_8_TIMEZONE)
+    # 将毫秒转换为秒（datetime.fromtimestamp 需要秒级时间戳）
+    timestamp_sec = timestamp_ms / 1000
+
+    # 转换为 UTC+8 时区的 datetime 对象
+    date = datetime.fromtimestamp(timestamp_sec, tz=UTC_PLUS_8_TIMEZONE)
+
+    # 格式化各部分
     year = date.year
-    month = ('0' + str(date.month)) if date.month < 10 else str(date.month)
-    day = ('0' + str(date.day)) if date.day < 10 else str(date.day)
-    hour = ('0' + str(date.hour)) if date.hour < 10 else str(date.hour)
-    minute = ('0' + str(date.minute)) if date.minute < 10 else str(date.minute)
-    second = ('0' + str(date.second)) if date.second < 10 else str(date.second)
+    month = f"{date.month:02d}"  # 补零，如 7 → "07"
+    day = f"{date.day:02d}"
+    hour = f"{date.hour:02d}"
+    minute = f"{date.minute:02d}"
+    second = f"{date.second:02d}"
+
     nowTime = (year, month, day, hour, minute, second)
     return nowTime
 
@@ -184,7 +203,7 @@ def getCheatInfo(game_id: int):
     except Exception as e:
         print(e)
         cheat_info = {}
-    return cheat_info.json()
+    return cheat_info.json(), cheat_info.status_code
 
 
 def getChallenges(game_id: int):
@@ -218,7 +237,6 @@ def getChallengesInfo(game_id: int, challenge_id: int):
         getLogin()
     try:
         challenges_info = SESSION.get(url=API_CHALLENGES_INFO_URL, headers=HEADERS, verify=False)
-        print(challenges_info.text)
     except Exception as e:
         print(e)
         challenges_info = {}
@@ -256,9 +274,10 @@ def banTeam(teamIds: list):
     if not checkCookieExpired():
         getLogin()
     for team_id in teamIds:
-        API_BAN_TEAM_URL = GZCTF_URL + f"/api/admin/participation/{str(team_id)}/Suspended"
+        API_BAN_TEAM_URL = GZCTF_URL + f"/api/admin/participation/{str(team_id)}"
         try:
-            a = SESSION.put(url=API_BAN_TEAM_URL)
+            a = SESSION.put(url=API_BAN_TEAM_URL, headers=HEADERS, data=BAN_DATA, verify=False)
+            print(a.text)
             if a.status_code != 200:
                 return False
         except Exception as e:
@@ -295,6 +314,7 @@ def getTeamInfoWithName(teamName: str):
     allTeams = []
     try:
         teams = SESSION.post(url=API_TEAM_URL, headers=HEADERS, verify=False)
+
     except Exception as e:
         print(e)
         teams = {}

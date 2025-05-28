@@ -1,3 +1,4 @@
+import nonebot.log
 from nonebot import on_command, get_bot
 from nonebot.permission import SUPERUSER
 from nonebot import require
@@ -27,6 +28,7 @@ GAMENOTICE = {}
 GAMECHEATS = {}
 for gameInfo in GAME_LIST:
     GAMENOTICE[f"gameId_{str(gameInfo['id'])}"] = getGameNotice(gameInfo['id'])
+    GAMECHEATS[f"gameId_{str(gameInfo['id'])}"], c = getCheatInfo(gameInfo['id'])
 UTC8 = timezone(timedelta(hours=8))
 GZCTF_URL = CONFIG["GZCTF_URL"].rstrip('/')
 LISTEN_GROUP = CONFIG["SEND_LIST"]
@@ -168,9 +170,9 @@ async def game_handle(bot, event):
                 status = '已结束'
             gameListMsg += f"比赛名称: {gameInfo['title']}\n开始时间: {start_Time}\n结束时间: {end_Time}\n比赛状态: {status}\n"
             gameListMsg += f"本群播报: {'开启' if event.group_id in SEND_GAME_LIST[gameInfo['title']] else '关闭'}\n"
-            if gameAllInfo['organizations']:
+            if gameAllInfo['divisions']:
                 gameListMsg += "参赛组织:"
-                for org in gameAllInfo['organizations']:
+                for org in gameAllInfo['divisions']:
                     gameListMsg += f" {org},"
                 gameListMsg = gameListMsg.rstrip(',')
                 gameListMsg += "\n"
@@ -184,10 +186,12 @@ async def game_handle(bot, event):
 
 @open.handle()
 async def open_handle(bot, event, args: Message = CommandArg()):
-    global STATUS, SEND_GAME_LIST
+    global GAME_LIST, STATUS, SEND_GAME_LIST
     arg = args.extract_plain_text().strip()
     args = parseArgs(arg)
 
+    if not CONFIG.get("GAME_LIST"):
+        GAME_LIST = getGameList()
     try:
         if len(args) == 1:
             if STATUS:
@@ -1337,7 +1341,6 @@ async def _():
                 for title in list(SEND_GAME_LIST.keys()):
                     if title not in game_titles:
                         del SEND_GAME_LIST[title]
-
         for gameInfo in GAME_LIST:
             tmpGameNotice = getGameNotice(gameInfo['id'])
             if tmpGameNotice != GAMENOTICE[f"gameId_{str(gameInfo['id'])}"]:
@@ -1385,33 +1388,38 @@ async def _():
                             except Exception as e:
                                 print(e)
                                 await bot.send_group_msg(group_id=id, message="Error")
-            GAMECHEATS[f"gameId_{str(gameInfo['id'])}"] = getCheatInfo(gameInfo['id'])
             if BAN_STATUS:
-                tmpGameCheats = getCheatInfo(gameInfo['id'])
+                # a = GAMECHEATS[f"gameId_{str(gameInfo['id'])}"]
+                # nonebot.log.logger.info(f"获取赛事 [{gameInfo['title']}] 封禁信息: {a}")
+                tmpGameCheats, code = getCheatInfo(gameInfo['id'])
+                if code == 400:
+                    continue
+                # nonebot.log.logger.info(f"获取赛事 [{gameInfo['title']}] 现在封禁信息: {tmpGameCheats}")
+                # nonebot.log.logger.info(tmpGameCheats != GAMECHEATS[f"gameId_{str(gameInfo['id'])}"])
                 if tmpGameCheats != GAMECHEATS[f"gameId_{str(gameInfo['id'])}"]:
                     tmpCheats = []
                     for cheat in tmpGameCheats:
                         if cheat not in GAMECHEATS[f"gameId_{str(gameInfo['id'])}"]:
                             tmpCheats.append(cheat)
-                    tmpCheats.sort()
+                    tmpCheats.sort(key=lambda x: x['submission']['time'])
                     for newCheat in tmpCheats:
                         msgTime = parseTime(newCheat['submission']['time'])
                         submitTeam = newCheat['submitTeam']['team']['name']
-                        if newCheat['submitTeam']['organization']:
-                            submitTeam += f"({newCheat['submitTeam']['organization']})"
+                        if newCheat['submitTeam']['division']:
+                            submitTeam += f"({newCheat['submitTeam']['division']})"
                         flagOwner = newCheat['ownedTeam']['team']['name']
-                        if newCheat['ownedTeam']['organization']:
-                            flagOwner += f"({newCheat['ownedTeam']['organization']})"
+                        if newCheat['ownedTeam']['division']:
+                            flagOwner += f"({newCheat['ownedTeam']['division']})"
                         teamIds = [newCheat['submitTeam']['id'], newCheat['ownedTeam']['id']]
                         msg = msgTemp_ban.format(type="【封禁】", gameName=gameInfo['title'],
                                                  time=f"{msgTime[0]}-{msgTime[1]}-{msgTime[2]} {msgTime[3]}:{msgTime[4]}:{msgTime[5]}",
                                                  challenge=newCheat['submission']['challenge'], team=submitTeam,
                                                  flagOwner=flagOwner)
                         banTeam(teamIds)
-                        GAMECHEATS[f"gameId_{str(gameInfo['id'])}"] = getCheatInfo(gameInfo['id'])
                         for id in SEND_GAME_LIST[gameInfo['title']]:
                             try:
                                 await bot.send_group_msg(group_id=id, message=msg)
                             except Exception as e:
                                 print(e)
                                 await bot.send_group_msg(group_id=id, message="Error")
+                GAMECHEATS[f"gameId_{str(gameInfo['id'])}"] = tmpGameCheats
